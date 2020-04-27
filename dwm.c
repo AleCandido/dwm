@@ -117,24 +117,28 @@ struct Monitor {
 	int nmaster;
 	int num;
 	int by;               /* bar geometry */
+	int shby;             /* shadowbar geometry */
 	int mx, my, mw, mh;   /* screen size */
 	int wx, wy, ww, wh;   /* window area  */
 	unsigned int seltags;
 	unsigned int sellt;
 	unsigned int tagset[2];
 	int showbar;
+	int showshadowbar;
 	int topbar;
+	int topshadowbar;
 	Client *clients;
 	Client *sel;
 	Client *stack;
 	Monitor *next;
 	Window barwin;
+	Window shadowbarwin;
 	const Layout *lt[2];
 };
 
 typedef struct {
 	const char *class;
-	const char *instance;
+	CONSt char *instance;
 	const char *title;
 	unsigned int tags;
 	int isfloating;
@@ -163,6 +167,8 @@ static void detachstack(Client *c);
 static Monitor *dirtomon(int dir);
 static void drawbar(Monitor *m);
 static void drawbars(void);
+static void drawshadowbar(Monitor *m);
+static void drawshadowbars(void);
 static void enternotify(XEvent *e);
 static void expose(XEvent *e);
 static void focus(Client *c);
@@ -211,6 +217,7 @@ static void tagmon(const Arg *arg);
 static void tile(Monitor *);
 static void togglebar(const Arg *arg);
 static void togglefloating(const Arg *arg);
+static void toggleshadowbar(const Arg *arg);
 static void toggletag(const Arg *arg);
 static void toggleview(const Arg *arg);
 static void unfocus(Client *c, int setfocus);
@@ -222,6 +229,7 @@ static void updateclientlist(void);
 static int updategeom(void);
 static void updatenumlockmask(void);
 static void updatesizehints(Client *c);
+static void updateshadowbarpos(Monitor *m);
 static void updatestatus(void);
 static void updatetitle(Client *c);
 static void updatewindowtype(Client *c);
@@ -240,6 +248,7 @@ static char stext[256];
 static int screen;
 static int sw, sh;           /* X display screen geometry width, height */
 static int bh, blw = 0;      /* bar geometry */
+static int shbh, shblw = 0;  /* shadowbar geometry */
 static int lrpad;            /* sum of left and right padding for text */
 static int (*xerrorxlib)(Display *, XErrorEvent *);
 static unsigned int numlockmask = 0;
@@ -506,6 +515,8 @@ cleanupmon(Monitor *mon)
 	}
 	XUnmapWindow(dpy, mon->barwin);
 	XDestroyWindow(dpy, mon->barwin);
+	XUnmapWindow(dpy, mon->shadowbarwin);
+	XDestroyWindow(dpy, mon->shadowbarwin);
 	free(mon);
 }
 
@@ -637,7 +648,9 @@ createmon(void)
 	m->mfact = mfact;
 	m->nmaster = nmaster;
 	m->showbar = showbar;
+	m->showshadowbar = showshadowbar;
 	m->topbar = topbar;
+	m->topshadowbar = topshadowbar;
 	m->lt[0] = &layouts[0];
 	m->lt[1] = &layouts[1 % LENGTH(layouts)];
 	strncpy(m->ltsymbol, layouts[0].symbol, sizeof m->ltsymbol);
@@ -752,6 +765,48 @@ drawbars(void)
 }
 
 void
+drawshadowbar(Monitor *m)
+{
+	/*int x, w, sw = 0;*/
+	/*int boxs = drw->fonts->h / 9;*/
+	/*int boxw = drw->fonts->h / 6 + 2;*/
+	/*unsigned int i, occ = 0, urg = 0;*/
+	/*Client *c;*/
+
+	/*for (c = m->clients; c; c = c->next) {*/
+		/*occ |= c->tags;*/
+		/*if (c->isurgent)*/
+			/*urg |= c->tags;*/
+	/*}*/
+	/*x = 0;*/
+	/*w = blw = TEXTW(m->ltsymbol);*/
+	/*drw_setscheme(drw, scheme[SchemeNorm]);*/
+	/*x = drw_text(drw, x, 0, w, bh, lrpad / 2, m->ltsymbol, 0);*/
+
+	/*if ((w = m->ww - sw - x) > bh) {*/
+		/*if (m->sel) {*/
+			/*drw_setscheme(drw, scheme[m == selmon ? SchemeSel : SchemeNorm]);*/
+			/*drw_text(drw, x, 0, w, bh, lrpad / 2, m->sel->name, 0);*/
+			/*if (m->sel->isfloating)*/
+				/*drw_rect(drw, x + boxs, boxs, boxw, boxw, m->sel->isfixed, 0);*/
+		/*} else {*/
+			/*drw_setscheme(drw, scheme[SchemeNorm]);*/
+			/*drw_rect(drw, x, 0, w, bh, 1, 1);*/
+		/*}*/
+	/*}*/
+	/*drw_map(drw, m->shadowbarwin, 0, 0, m->ww, shbh);*/
+}
+
+void
+drawshadowbars(void)
+{
+	Monitor *m;
+
+	for (m = mons; m; m = m->next)
+		drawshadowbar(m);
+}
+
+void
 enternotify(XEvent *e)
 {
 	Client *c;
@@ -776,8 +831,10 @@ expose(XEvent *e)
 	Monitor *m;
 	XExposeEvent *ev = &e->xexpose;
 
-	if (ev->count == 0 && (m = wintomon(ev->window)))
+	if (ev->count == 0 && (m = wintomon(ev->window))){
 		drawbar(m);
+		drawshadowbar(m);
+    }
 }
 
 void
@@ -803,6 +860,7 @@ focus(Client *c)
 	}
 	selmon->sel = c;
 	drawbars();
+	drawshadowbars();
 }
 
 /* there are some broken focus acquiring clients needing extra handling */
@@ -1233,12 +1291,15 @@ propertynotify(XEvent *e)
 		case XA_WM_HINTS:
 			updatewmhints(c);
 			drawbars();
+			drawshadowbars();
 			break;
 		}
 		if (ev->atom == XA_WM_NAME || ev->atom == netatom[NetWMName]) {
 			updatetitle(c);
-			if (c == c->mon->sel)
+			if (c == c->mon->sel){
 				drawbar(c->mon);
+				drawshadowbar(c->mon);
+            }
 		}
 		if (ev->atom == netatom[NetWMWindowType])
 			updatewindowtype(c);
@@ -1352,6 +1413,7 @@ restack(Monitor *m)
 	XWindowChanges wc;
 
 	drawbar(m);
+	drawshadowbar(m);
 	if (!m->sel)
 		return;
 	if (m->sel->isfloating || !m->lt[m->sellt]->arrange)
@@ -1507,8 +1569,10 @@ setlayout(const Arg *arg)
 	strncpy(selmon->ltsymbol, selmon->lt[selmon->sellt]->symbol, sizeof selmon->ltsymbol);
 	if (selmon->sel)
 		arrange(selmon);
-	else
+	else {
 		drawbar(selmon);
+		drawshadowbar(selmon);
+    }
 }
 
 /* arg > 1.0 will set mfact absolutely */
@@ -1546,6 +1610,7 @@ setup(void)
 		die("no fonts could be loaded.");
 	lrpad = drw->fonts->h;
 	bh = drw->fonts->h + 2;
+    shbh = shadowbarheight;
 	updategeom();
 	/* init atoms */
 	utf8string = XInternAtom(dpy, "UTF8_STRING", False);
@@ -1572,6 +1637,7 @@ setup(void)
 		scheme[i] = drw_scm_create(drw, colors[i], 3);
 	/* init bars */
 	updatebars();
+	updateshadowbars();
 	updatestatus();
 	/* supporting window for NetWMCheck */
 	wmcheckwin = XCreateSimpleWindow(dpy, root, 0, 0, 1, 1, 0, 0, 0);
@@ -1720,6 +1786,15 @@ togglefloating(const Arg *arg)
 }
 
 void
+toggleshadowbar(const Arg *arg)
+{
+	selmon->showshadowbar = !selmon->showshadowbar;
+	updateshadowbarpos(selmon);
+	XMoveResizeWindow(dpy, selmon->shadowbarwin, selmon->wx, selmon->shby, selmon->ww, shbh);
+	arrange(selmon);
+}
+
+void
 toggletag(const Arg *arg)
 {
 	unsigned int newtags;
@@ -1834,6 +1909,41 @@ updatebarpos(Monitor *m)
 }
 
 void
+updateshadowbars(void)
+{
+	Monitor *m;
+	XSetWindowAttributes wa = {
+		.override_redirect = True,
+		.background_pixmap = ParentRelative,
+		.event_mask = ButtonPressMask|ExposureMask
+	};
+	XClassHint ch = {"dwm", "dwm"};
+	for (m = mons; m; m = m->next) {
+		if (m->shadowbarwin)
+			continue;
+		m->shadowbarwin = XCreateWindow(dpy, root, m->wx, m->shby, m->ww, shbh, 0, DefaultDepth(dpy, screen),
+				CopyFromParent, DefaultVisual(dpy, screen),
+				CWOverrideRedirect|CWBackPixmap|CWEventMask, &wa);
+		XDefineCursor(dpy, m->shadowbarwin, cursor[CurNormal]->cursor);
+		XMapRaised(dpy, m->shadowbarwin);
+		XSetClassHint(dpy, m->shadowbarwin, &ch);
+	}
+}
+
+void
+updateshadowbarpos(Monitor *m)
+{
+	m->wy = m->my;
+	m->wh = m->mh;
+	if (m->showshadowbar) {
+		m->wh -= shbh;
+		m->shby = m->topshadowbar ? m->wy : m->wy + m->wh;
+		m->wy = m->topshadowbar ? m->wy + shbh : m->wy;
+	} else
+		m->shby = -shbh;
+}
+
+void
 updateclientlist()
 {
 	Client *c;
@@ -1888,6 +1998,7 @@ updategeom(void)
 					m->mw = m->ww = unique[i].width;
 					m->mh = m->wh = unique[i].height;
 					updatebarpos(m);
+					updateshadowbarpos(m);
 				}
 		} else { /* less monitors available nn < n */
 			for (i = nn; i < n; i++) {
@@ -1916,6 +2027,7 @@ updategeom(void)
 			mons->mw = mons->ww = sw;
 			mons->mh = mons->wh = sh;
 			updatebarpos(mons);
+			updateshadowbarpos(mons);
 		}
 	}
 	if (dirty) {
@@ -2066,9 +2178,12 @@ wintomon(Window w)
 
 	if (w == root && getrootptr(&x, &y))
 		return recttomon(x, y, 1, 1);
-	for (m = mons; m; m = m->next)
+	for (m = mons; m; m = m->next){
 		if (w == m->barwin)
 			return m;
+		if (w == m->shadowbarwin)
+			return m;
+    }
 	if ((c = wintoclient(w)))
 		return c->mon;
 	return selmon;
